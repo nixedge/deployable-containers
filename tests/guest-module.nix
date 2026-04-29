@@ -9,14 +9,15 @@
   lib,
   ...
 }: let
-  eval = pkgs.nixos {
+  # pkgs.nixos returns the full eval object; access attrs via .config
+  eval = (pkgs.nixos {
     imports = [self.nixosModules.deployable-container-guest];
     fileSystems."/" = {
       device = "none";
       fsType = "tmpfs";
     };
     system.stateVersion = lib.trivial.release;
-  };
+  }).config;
 in
   pkgs.runCommand "dc-guest-module-check" {} ''
     set -euo pipefail

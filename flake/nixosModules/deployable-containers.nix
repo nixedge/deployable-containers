@@ -145,7 +145,8 @@
     buildBootstrapSystem = _name: ctr:
       (pkgs.nixos {
         imports = [
-          # Core container settings
+          # Core container settings (pkgs.nixos returns the full eval object;
+          # .toplevel is a shortcut for .config.system.build.toplevel)
           ({pkgs, lib, ...}: {
             boot.isContainer = true;
 
@@ -176,10 +177,7 @@
           # Caller-supplied extras (active only during bootstrap)
           ctr.extraInitialConfig
         ];
-      })
-      .system
-      .build
-      .toplevel;
+      }).toplevel;
 
     # ---------------------------------------------------------------------------
     # Pre-start script (runs on the host as root, before nspawn starts).
