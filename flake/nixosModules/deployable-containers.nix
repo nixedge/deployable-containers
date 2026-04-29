@@ -165,8 +165,9 @@
             nix.settings.trusted-users = ["root" "@wheel"];
             environment.variables.NIX_REMOTE = mkDefault "daemon";
 
-            # No real boot loader in a container.
-            system.build.installBootLoader = lib.mkDefault "${pkgs.coreutils}/bin/true";
+            # boot.isContainer = true causes container-config.nix to be
+            # imported, which already sets installBootLoader via mkDefault.
+            # Do not set it here to avoid a unique-option conflict.
 
             system.stateVersion = lib.trivial.release;
           })
