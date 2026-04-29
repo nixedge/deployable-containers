@@ -166,6 +166,8 @@
             # Allow root (and wheel) to talk to the host nix-daemon.
             nix.settings.trusted-users = ["root" "@wheel"];
             nix.settings.experimental-features = ["nix-command" "flakes"];
+            nix.settings.extra-substituters = ctr.substituters;
+            nix.settings.extra-trusted-public-keys = ctr.trustedPublicKeys;
             environment.variables.NIX_REMOTE = mkDefault "daemon";
 
             # boot.isContainer = true causes container-config.nix to be
@@ -448,6 +450,28 @@
               type = types.str;
               default = "2min";
               description = "Timeout for the container to signal readiness.";
+            };
+
+            substituters = mkOption {
+              type = types.listOf types.str;
+              default = [];
+              example = literalExpression ''[ "https://my-cache.example.com" ]'';
+              description = ''
+                Extra binary cache URLs added to the bootstrap image.
+                Appended to the nixpkgs default (cache.nixos.org) via
+                `extra-substituters`, so the default is never removed.
+                Set the corresponding `trustedPublicKeys` for each cache.
+              '';
+            };
+
+            trustedPublicKeys = mkOption {
+              type = types.listOf types.str;
+              default = [];
+              example = literalExpression ''[ "my-cache.example.com:base64pubkey==" ]'';
+              description = ''
+                Public keys for the caches listed in `substituters`.
+                Added via `extra-trusted-public-keys`.
+              '';
             };
 
             extraInitialConfig = mkOption {
