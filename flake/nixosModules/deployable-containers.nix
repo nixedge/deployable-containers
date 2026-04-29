@@ -64,22 +64,24 @@
     containerInitScript = pkgs.writeShellScript "dc-container-init" ''
       trap 'exit 0' SIGRTMIN+3
 
+      IP=${pkgs.iproute2}/bin/ip
+
       # Veth / bridge mode: rename the default nspawn interface to eth0.
       if [ -n "''${DC_PRIVATE_NETWORK:-}" ] || [ -n "''${DC_BRIDGE:-}" ]; then
-        if ip link show host0 >/dev/null 2>&1; then
-          ip link set host0 name eth0
-          ip link set eth0 up
+        if $IP link show host0 >/dev/null 2>&1; then
+          $IP link set host0 name eth0
+          $IP link set eth0 up
         fi
 
         # For veth mode, configure the static point-to-point link.
         if [ -n "''${DC_PRIVATE_NETWORK:-}" ]; then
           if [ -n "''${DC_LOCAL_ADDRESS:-}" ]; then
-            ip addr add "''${DC_LOCAL_ADDRESS}" dev eth0
+            $IP addr add "''${DC_LOCAL_ADDRESS}" dev eth0
           fi
           if [ -n "''${DC_HOST_ADDRESS:-}" ]; then
             HOST_IP="''${DC_HOST_ADDRESS%%/*}"
-            ip route add "''${HOST_IP}" dev eth0
-            ip route add default via "''${HOST_IP}"
+            $IP route add "''${HOST_IP}" dev eth0
+            $IP route add default via "''${HOST_IP}"
           fi
         fi
       fi
