@@ -39,6 +39,7 @@
     # at the standard path by the deployable-containers host module).
     environment.variables.NIX_REMOTE = lib.mkDefault "daemon";
     nix.settings.trusted-users = lib.mkDefault ["root" "@wheel"];
+    nix.settings.experimental-features = lib.mkDefault ["nix-command" "flakes"];
 
     # Use the host's resolver rather than managing our own.
     networking.useHostResolvConf = lib.mkDefault true;

@@ -165,6 +165,7 @@
 
             # Allow root (and wheel) to talk to the host nix-daemon.
             nix.settings.trusted-users = ["root" "@wheel"];
+            nix.settings.experimental-features = ["nix-command" "flakes"];
             environment.variables.NIX_REMOTE = mkDefault "daemon";
 
             # boot.isContainer = true causes container-config.nix to be
