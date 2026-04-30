@@ -226,6 +226,13 @@
         mkdir -p /nix/var/nix/gcroots/deployable-containers
         ln -sfn "$PROFILES" "/nix/var/nix/gcroots/deployable-containers/${name}"
 
+        # Pin the host's own running system as a GC root.  NixOS normally
+        # creates these at boot/switch time but they may be absent on bare-metal
+        # hosts or after a manual recovery.  Without them a container-triggered
+        # GC (via the shared daemon socket) can collect the host OS.
+        ln -sfn /run/current-system /nix/var/nix/gcroots/current-system
+        ln -sfn /run/booted-system  /nix/var/nix/gcroots/booted-system
+
         # On first run there is no deployed system yet.  Seed the profile with
         # the bootstrap image so the container has something to boot.
         if [ ! -e "$PROFILES/system" ]; then
@@ -291,6 +298,10 @@
           ++ optional (ctr.localAddress != null) "--setenv=DC_LOCAL_ADDRESS=${ctr.localAddress}"
           ++ optional (ctr.hostBridge != null) "--setenv=DC_BRIDGE=${ctr.hostBridge}"
         );
+
+        capabilityFlags = concatStringsSep " " (
+          map (cap: "--capability=${cap}") ctr.capabilities
+        );
       in
         pkgs.writeShellScript "dc-start-${name}" ''
           set -euo pipefail
@@ -314,6 +325,7 @@
             --bind="$STATE/gcroots:/nix/var/nix/gcroots" \
             ${networkFlags} \
             ${envFlags} \
+            ${capabilityFlags} \
             ${containerInitScript} \
             "$SYSTEM/init"
         '';
@@ -471,6 +483,21 @@
               description = ''
                 Public keys for the caches listed in `substituters`.
                 Added via `extra-trusted-public-keys`.
+              '';
+            };
+
+            capabilities = mkOption {
+              type = types.listOf types.str;
+              default = [];
+              example = literalExpression ''[ "CAP_IPC_LOCK" ]'';
+              description = ''
+                Additional Linux capabilities to grant the container via
+                <literal>systemd-nspawn --capability=</literal>.
+
+                By default nspawn drops several capabilities including
+                <literal>CAP_IPC_LOCK</literal>.  Add it here for workloads
+                (e.g. cardano-node) that need to mlock memory for key
+                security.
               '';
             };
 

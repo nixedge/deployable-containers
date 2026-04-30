@@ -35,6 +35,10 @@
     # Store is read-only, shared with the host — no point optimising it here.
     nix.optimise.automatic = lib.mkDefault false;
 
+    # All nix operations go through the host's daemon, so GC runs on the host
+    # store with host privileges.  Containers must never trigger GC themselves.
+    nix.gc.automatic = lib.mkForce false;
+
     # Route all nix operations through the host's daemon (socket is bind-mounted
     # at the standard path by the deployable-containers host module).
     environment.variables.NIX_REMOTE = lib.mkDefault "daemon";
