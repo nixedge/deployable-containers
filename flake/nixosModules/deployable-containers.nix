@@ -10,10 +10,11 @@
 #      its *current* system profile (set by the last deployment), never from
 #      the bootstrap image.
 #
-# Containers use the host's read-only /nix/store and nix-daemon socket so
-# that deployments can push closures without a separate nix instance inside
-# the container.
-{
+# Containers share the host's read-only /nix/store via a restricted nix-daemon
+# proxy (nix-container-daemon).  The proxy is a Rust binary that relays the
+# nix worker protocol verbatim but intercepts wopCollectGarbage (op 20) and
+# returns a permission-denied error before it reaches the real daemon.
+{self, ...}: {
   flake.nixosModules.deployable-containers = {
     config,
     pkgs,
@@ -39,6 +40,13 @@
       ;
 
     cfg = config.deployableContainers;
+
+    nixContainerDaemon = pkgs.rustPlatform.buildRustPackage {
+      pname = "nix-container-daemon";
+      version = "0.1.0";
+      src = "${self}/nix-container-daemon";
+      cargoLock.lockFile = "${self}/nix-container-daemon/Cargo.lock";
+    };
 
     # ---------------------------------------------------------------------------
     # Helpers
@@ -320,7 +328,7 @@
             --notify-ready=yes \
             --kill-signal=SIGRTMIN+3 \
             --bind-ro=/nix/store \
-            --bind-ro=/nix/var/nix/daemon-socket \
+            --bind-ro=/run/nix-container-daemon:/nix/var/nix/daemon-socket \
             --bind="$STATE/profiles:/nix/var/nix/profiles" \
             --bind="$STATE/gcroots:/nix/var/nix/gcroots" \
             ${networkFlags} \
@@ -338,8 +346,10 @@
     in {
       description = "Deployable Container '${name}'";
       wantedBy = optional ctr.autoStart "machines.target";
-      after = ["network.target"];
-      wants = ["network.target"];
+      # nix-container-daemon.service must be running so its socket file exists
+      # before nspawn bind-mounts /run/nix-container-daemon into the container.
+      after = ["network.target" "nix-container-daemon.service"];
+      wants = ["network.target" "nix-container-daemon.service"];
 
       serviceConfig = {
         Type = "notify";
@@ -535,8 +545,46 @@
         wantedBy = ["multi-user.target"];
       };
 
+      # ---------------------------------------------------------------------------
+      # Restricted nix-daemon proxy (nix-container-daemon)
+      #
+      # A Rust binary that relays the nix worker protocol verbatim but
+      # intercepts wopCollectGarbage (op 20) and returns a permission-denied
+      # error before the request reaches the real daemon.
+      #
+      # The binary creates and owns /run/nix-container-daemon/socket, signals
+      # systemd readiness via SD_NOTIFY once the socket is live, then serves
+      # connections.  RuntimeDirectory ensures the directory exists (and is
+      # owned by the service user) before ExecStart runs.
+      # ---------------------------------------------------------------------------
+
+      users.users.nix-container-daemon = {
+        isSystemUser = true;
+        group = "nix-container-daemon";
+        description = "Nix daemon proxy for deployable containers";
+      };
+      users.groups.nix-container-daemon = {};
+
       systemd.services =
-        mapAttrs' (name: ctr:
+        {
+          nix-container-daemon = {
+            description = "Restricted nix-daemon proxy for deployable containers";
+            wantedBy = ["multi-user.target"];
+            after = ["nix-daemon.socket"];
+            serviceConfig = {
+              Type = "notify";
+              NotifyAccess = "main";
+              User = "nix-container-daemon";
+              Group = "nix-container-daemon";
+              RuntimeDirectory = "nix-container-daemon";
+              RuntimeDirectoryMode = "0755";
+              ExecStart = "${nixContainerDaemon}/bin/nix-container-daemon";
+              Restart = "on-failure";
+              RestartSec = "1s";
+            };
+          };
+        }
+        // mapAttrs' (name: ctr:
           nameValuePair "deployable-container-${name}" (makeService name ctr))
         cfg.containers;
 
@@ -545,6 +593,11 @@
         "net.ipv4.ip_forward" = mkDefault true;
         "net.ipv6.conf.all.forwarding" = mkDefault true;
       };
+
+      # Prevent dhcpcd from managing container veth (ve-*) and bridge (vb-*)
+      # interfaces.  If dhcpcd probes them for IPv4LL addresses it disrupts
+      # established SSH connections to containers.
+      networking.dhcpcd.denyInterfaces = ["ve-*" "vb-*"];
 
       # Ensure the top-level state directory exists before any service runs.
       systemd.tmpfiles.rules = [

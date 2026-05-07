@@ -1,11 +1,24 @@
-{
+{inputs, ...}: {
   perSystem = {
     config,
+    inputs',
     pkgs,
     ...
-  }: {
+  }: let
+    toolchain = with inputs'.fenix.packages;
+      combine [
+        minimal.rustc
+        minimal.cargo
+        stable.rust-analyzer
+        stable.rustfmt
+        stable.clippy
+      ];
+  in {
     devShells.default = pkgs.mkShell {
       packages = with pkgs; [
+        # Rust toolchain
+        toolchain
+
         # Deployment
         colmena
 
@@ -23,6 +36,7 @@
 
       shellHook = ''
         echo "deployable-containers dev shell"
+        echo "  cargo    $(cargo --version)"
         echo "  colmena  $(colmena --version)"
         echo "  nix      $(nix --version)"
       '';
