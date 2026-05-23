@@ -229,10 +229,28 @@
           "$PROFILES"                          \
           "$GCROOTS"
 
-        # Tell the host nix GC to treat the container's profile generations as
-        # roots so deployed systems are never collected from under us.
+        # Register the container's current system profile as a host GC root so
+        # the deployed system is never collected.
+        #
+        # We point at $PROFILES/system (the profile symlink), NOT at the
+        # profiles directory.  Symlinks inside that directory such as
+        # current-system → /run/current-system are valid only in the
+        # container's mount namespace; on the host /run/current-system resolves
+        # to the host's own system, so directory traversal would root the host
+        # instead of the guest.  Pointing directly at $PROFILES/system lets
+        # the host GC resolve the chain via realpath():
+        #   $PROFILES/system → system-N-link → /nix/store/<guest-system>
+        # which is correct in the host's namespace.
         mkdir -p /nix/var/nix/gcroots/deployable-containers
-        ln -sfn "$PROFILES" "/nix/var/nix/gcroots/deployable-containers/${name}"
+        # Earlier versions of this module created a real directory here instead
+        # of a symlink.  Remove it so ln -sfn replaces it rather than creating
+        # a symlink inside it (which would re-expose the problematic container
+        # gcroots to the host GC).
+        if [ -d "/nix/var/nix/gcroots/deployable-containers/${name}" ] && \
+           [ ! -L "/nix/var/nix/gcroots/deployable-containers/${name}" ]; then
+          rm -rf "/nix/var/nix/gcroots/deployable-containers/${name}"
+        fi
+        ln -sfn "$PROFILES/system" "/nix/var/nix/gcroots/deployable-containers/${name}"
 
         # Pin the host's own running system as a GC root.  NixOS normally
         # creates these at boot/switch time but they may be absent on bare-metal
